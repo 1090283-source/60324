@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>熊貓節拍：竹林冒險</title>
+    <!-- 使用 Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            /* 預設顏色將由 JS 應用 */
+            font-family: 'Noto Sans TC', sans-serif;
+            overflow: hidden;
+            transition: background-color 0.5s;
+        }
+        .game-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            /* 預設顏色將由 JS 應用 */
+            border-radius: 2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5); /* 更強烈的陰影效果 */
+            transition: background-color 0.5s;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .animate-pulse-button {
+            animation: pulse 1.5s infinite;
+        }
+        .ui-button {
+            transition: background-color 0.3s, transform 0.3s;
+        }
+    </style>
+</head>
+<body class="bg-[#1a1a2e]">
+
+<div class="game-container">
+    <!-- 遊戲標題 -->
+    <h1 id="game-title" class="text-4xl md:text-5xl font-extrabold text-[#a3b18a] mb-6 drop-shadow-lg">
+        熊貓節拍：竹林冒險
+    </h1>
+
+    <!-- 遊戲畫面 -->
+    <canvas id="gameCanvas" class="w-[90%] max-w-[500px] aspect-[9/16]"></canvas>
+
+    <!-- 遊戲 UI -->
+    <div id="uiOverlay" class="absolute inset-0 flex justify-center items-center backdrop-blur-sm bg-black bg-opacity-10 z-10">
+        <div id="startScreen" class="flex flex-col items-center p-8 bg-white rounded-3xl shadow-2xl transition-all duration-500 transform scale-100">
+            <h2 class="text-3xl font-bold text-[#5c8a5c] mb-4" id="startScreenTitle">歡迎來到竹林</h2>
+            <p class="text-gray-600 text-center mb-6">點擊竹筍，跟上節奏，享受這趟療癒旅程吧！<br><b>使用自訂按鍵來控制車道。</b></p>
+            
+            <!-- 主題選擇 -->
+            <div class="mb-6 w-full max-w-xs">
+                <label for="themeSelector" class="block text-sm font-medium text-gray-700 mb-2">選擇主題 (貓熊外觀會改變)：</label>
+                <select id="themeSelector" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#8ab28a]">
+                    <!-- Options populated by JS -->
+                </select>
+            </div>
+            
+            <!-- 按鍵自訂 -->
+            <div class="mb-8 w-full max-w-xs">
+                <label class="block text-sm font-medium text-gray-700 mb-2">自訂按鍵 (1-4 號道)：</label>
+                <div id="key-assign-container" class="grid grid-cols-4 gap-2">
+                    <!-- Buttons populated by JS -->
+                </div>
+            </div>
+
+            <button id="startButton" class="ui-button text-white font-bold py-3 px-8 rounded-full shadow-lg transition-colors duration-300 transform hover:scale-105 animate-pulse-button">
+                開始遊戲
+            </button>
+        </div>
+        
+        <div id="countdown" class="hidden flex-col items-center text-white font-extrabold text-9xl drop-shadow-lg">
+            <span id="panda-wisdom" class="text-white text-lg font-normal mb-4"></span>
+            <span id="countdown-number"></span>
+        </div>
+        
+        <div id="endScreen" class="hidden flex-col items-center p-8 bg-white rounded-3xl shadow-2xl transition-all duration-500 transform scale-100">
+            <h2 class="text-3xl font-bold text-[#5c8a5c] mb-4" id="endScreenTitle">遊戲結束</h2>
+            <p class="text-gray-600 text-lg mb-2">你的分數：</p>
+            <p id="finalScore" class="text-5xl font-extrabold text-[#5c8a5c] mb-6 drop-shadow-lg">0</p>
+            <button id="regenerateButton" class="ui-button text-white font-bold py-3 px-8 rounded-full shadow-lg transition-colors duration-300 transform hover:scale-105 mb-4">
+                讓貓熊給你一個療癒旋律 ✨
+            </button>
+            <button id="getWisdomButton" class="ui-button text-white font-bold py-3 px-8 rounded-full shadow-lg transition-colors duration-300 transform hover:scale-105 mb-4">
+                貓熊為你量身打造的話語 ✨
+            </button>
+            <p id="postGameMessage" class="text-gray-600 text-center mb-4 hidden"></p>
+            <!-- 這裡的按鈕將會呼叫 resetToStartScreen() -->
+            <button id="restartButton" class="ui-button text-white font-bold py-3 px-8 rounded-full shadow-lg transition-colors duration-300 transform hover:scale-105">
+                返回設定主介面
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 遊戲設定與變數 ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const uiOverlay = document.getElementById('uiOverlay');
+    const startScreen = document.getElementById('startScreen');
+    const endScreen = document.getElementById('endScreen');
+    const startButton = document.getElementById('startButton');
+    const restartButton = document.getElementById('restartButton');
+    const regenerateButton = document.getElementById('regenerateButton');
+    const getWisdomButton = document.getElementById('getWisdomButton');
+    const finalScoreDisplay = document.getElementById('finalScore');
+    const countdownDisplay = document.getElementById('countdown');
+    const countdownNumber = document.getElementById('countdown-number');
+    const pandaWisdom = document.getElementById('panda-wisdom');
+    const postGameMessage = document.getElementById('postGameMessage');
+    const themeSelector = document.getElementById('themeSelector');
+
+    // 遊戲參數
+    const NOTE_SPEED = 2.5; // Note fall speed
+    const NOTE_SIZE = 40; // Note size
+    const LANE_COUNT = 4; // Number of lanes
+    const HIT_ZONE_HEIGHT = 100; // 底部打擊區的高度
+    let score = 0;
+    let notes = [];
+    let isPlaying = false;
+    let lastTime = 0;
+    
+    // 動態主題與按鍵設定
+    const THEMES = {
+        'starryBamboo': {
+            name: '星夜竹林 (經典熊貓)',
+            bodyBg: '#1a1a2e',         // 深夜星空藍紫
+            canvasBg: '#386641',        // 深竹林綠
+            lineColor: '#e0fbfc',      // 淺青色線條 (星光)
+            textColor: '#fff',         // 白色文字
+            titleColor: '#a3b18a',     // 柔和綠色標題
+            noteColor: '#a3b18a',      // 柔和綠色竹筍
+            buttonBgPrimary: 'bg-[#8ab28a] hover:bg-[#6c9c6c]',
+            buttonBgSecondary: 'bg-[#f0c45d] hover:bg-[#d8a846]',
+            uiTitleColor: 'text-[#5c8a5c]',
+            // 角色顏色：經典黑白熊貓
+            pandaColors: {
+                body: '#fff', // 白色身體
+                fur: '#333' // 黑色毛髮
+            }
+        },
+        'daylightForest': {
+            name: '日光森林 (棕色熊貓)',
+            bodyBg: '#c7e5a0',         // 淺綠色天空
+            canvasBg: '#7c9f6d',        // 茂盛森林綠
+            lineColor: '#386641',      // 深綠色線條
+            textColor: '#333',         // 黑色文字
+            titleColor: '#386641',     // 深綠色標題
+            noteColor: '#386641',      // 深綠色竹筍
+            buttonBgPrimary: 'bg-[#5c8a5c] hover:bg-[#4a6b4a]',
+            buttonBgSecondary: 'bg-[#d8a846] hover:bg-[#b08738]',
+            uiTitleColor: 'text-[#386641]',
+            // 角色顏色：秦嶺棕色熊貓風格
+            pandaColors: {
+                body: '#b09172', // 淺棕色身體
+                fur: '#7d5e4a'  // 深棕色毛髮
+            }
+        },
+        'sunsetGlow': {
+            name: '夕陽餘暉 (火焰熊貓)',
+            bodyBg: '#b3472b',         // 深紅/橘色天空
+            canvasBg: '#f2a65a',        // 柔和橘色光芒
+            lineColor: '#5c001e',      // 深紅酒色線條
+            textColor: '#5c001e',     // 深紅酒色文字
+            titleColor: '#f2e9e4',     // 柔和白色標題
+            noteColor: '#5c001e',      // 深紅酒色竹筍
+            buttonBgPrimary: 'bg-[#e0b5d0] hover:bg-[#c296b1]',
+            buttonBgSecondary: 'bg-[#b3472b] hover:bg-[#8f3a23]',
+            uiTitleColor: 'text-[#b3472b]',
+            // 角色顏色：紅棕色調
+            pandaColors: {
+                body: '#f2e9e4', // 奶油白身體
+                fur: '#b3472b'   // 深紅/橘色毛髮
+            }
+        }
+    };
+
+    let currentTheme = 'starryBamboo'; // 預設主題
+    let keyMap = { 0: 'a', 1: 's', 2: 'd', 3: 'f' }; // 預設按鍵
+    let isListeningForKey = null; // 處理按鍵自訂狀態
+    
+    // 預設歌曲資料
+    let songData = [
+        { time: 0, lane: 1 }, { time: 500, lane: 2 }, { time: 1000, lane: 3 },
+        { time: 1500, lane: 2 }, { time: 2000, lane: 1 }, { time: 2500, lane: 0 },
+        { time: 3000, lane: 3 }, { time: 3500, lane: 2 }, { time: 4000, lane: 1 },
+        { time: 4500, lane: 0 }, { time: 5000, lane: 1 }, { time: 5500, lane: 2 },
+        { time: 6000, lane: 3 }, { time: 6500, lane: 2 }, { time: 7000, lane: 1 },
+        { time: 7500, lane: 0 }, { time: 8000, lane: 3 }, { time: 8500, lane: 2 },
+        { time: 9000, lane: 1 }, { time: 9500, lane: 0 },
+    ];
+    let songDuration = 10000; // Song duration in milliseconds
+
+    // Panda animation state
+    let pandaY = 0;
+    let pandaTargetY = 0;
+    let pandaX = 0;
+    let pandaCurrentLane = 0;
+    let isPandaGlowing = false;
+    
+    // Game audio
+    let audioContext;
+    
+    let noteIndex = 0;
+    let songStartTime = 0;
+
+    // --- 主題切換邏輯 ---
+    // 移除 Tailwind 類別的輔助函數
+    function removeTailwindClasses(element, prefix) {
+        if (!element) return;
+        const classes = element.className.split(' ').filter(cls => !cls.startsWith(prefix));
+        element.className = classes.join(' ');
+    }
+
+    // 應用選定主題
+    function applyTheme(themeName) {
+        currentTheme = themeName;
+        const theme = THEMES[themeName];
+
+        // 1. 更新全域 CSS 屬性
+        document.body.style.backgroundColor = theme.bodyBg;
+        canvas.style.backgroundColor = theme.canvasBg;
+
+        // 2. 更新固定 UI 元素顏色
+        document.getElementById('game-title').style.color = theme.titleColor;
+        document.getElementById('startScreenTitle').className = `text-3xl font-bold mb-4 ${theme.uiTitleColor}`;
+        document.getElementById('endScreenTitle').className = `text-3xl font-bold mb-4 ${theme.uiTitleColor}`;
+        finalScoreDisplay.className = `text-5xl font-extrabold mb-6 drop-shadow-lg ${theme.uiTitleColor}`;
+        
+        // 3. 更新按鈕顏色
+        const updateButtonClasses = (id, newBgClass) => {
+            const button = document.getElementById(id);
+            if (button) {
+                // 移除舊的顏色類別，並應用新的
+                removeTailwindClasses(button, 'bg-');
+                removeTailwindClasses(button, 'hover:bg-');
+                button.classList.add(...newBgClass.split(' '));
+            }
+        };
+        
+        updateButtonClasses('startButton', theme.buttonBgPrimary);
+        updateButtonClasses('restartButton', theme.buttonBgPrimary);
+        updateButtonClasses('regenerateButton', theme.buttonBgSecondary);
+        updateButtonClasses('getWisdomButton', theme.buttonBgSecondary);
+
+        // 重新繪製以更新畫布顏色和線條 (這也會更新貓熊顏色)
+        if (!isPlaying) {
+            draw(performance.now());
+        }
+    }
+
+    // --- 按鍵自訂邏輯 ---
+    function setupKeyAssignmentUI() {
+        const container = document.getElementById('key-assign-container');
+        container.innerHTML = '';
+        
+        for (let i = 0; i < LANE_COUNT; i++) {
+            const button = document.createElement('button');
+            button.id = `key-assign-${i}`;
+            button.textContent = `${i + 1} 號道 (${keyMap[i].toUpperCase()})`;
+            button.className = 'w-full p-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors shadow';
+            button.dataset.lane = i;
+            
+            button.addEventListener('click', () => startListeningForKey(i));
+            container.appendChild(button);
+        }
+    }
+
+    function startListeningForKey(laneIndex) {
+        isListeningForKey = laneIndex;
+        // 禁用所有按鈕並改變當前按鈕的樣式
+        for (let i = 0; i < LANE_COUNT; i++) {
+            const btn = document.getElementById(`key-assign-${i}`);
+            btn.disabled = true;
+            btn.textContent = `${i + 1} 號道 (${keyMap[i].toUpperCase()})`;
+            btn.classList.remove('ring-4', 'ring-red-500', 'bg-red-400', 'text-white');
+        }
+        
+        const listeningBtn = document.getElementById(`key-assign-${laneIndex}`);
+        listeningBtn.textContent = '按鍵中...';
+        listeningBtn.classList.add('ring-4', 'ring-red-500', 'bg-red-400', 'text-white');
+        
+        // 新增臨時的鍵盤監聽器來捕捉新的按鍵
+        window.addEventListener('keydown', handleKeyAssignment, { once: true });
+    }
+
+    function handleKeyAssignment(event) {
+        if (isListeningForKey !== null) {
+            const newKey = event.key.toLowerCase();
+            
+            // 檢查按鍵是否已經被佔用
+            const existingLane = Object.keys(keyMap).find(lane => keyMap[lane] === newKey);
+            
+            if (existingLane !== undefined) {
+                // 如果被佔用，則進行按鍵交換
+                const oldKey = keyMap[isListeningForKey];
+                keyMap[existingLane] = oldKey;
+            }
+
+            // 分配新的按鍵
+            keyMap[isListeningForKey] = newKey;
+            
+            // 重設 UI 狀態
+            const assignedLane = isListeningForKey;
+            isListeningForKey = null;
+            setupKeyAssignmentUI(); // 重新繪製按鈕，顯示新的按鍵
+            
+            // 重新啟用所有按鈕
+            for (let i = 0; i < LANE_COUNT; i++) {
+                document.getElementById(`key-assign-${i}`).disabled = false;
+            }
+        }
+    }
+
+    // --- 遊戲邏輯函數 ---
+    
+    // Adjust Canvas size
+    function resizeCanvas() {
+        const parent = canvas.parentElement;
+        const width = parent.clientWidth;
+        const height = parent.clientHeight;
+        const aspectRatio = 9/16; // Vertical ratio
+        
+        if (width / height > aspectRatio) {
+            canvas.height = height * 0.8;
+            canvas.width = canvas.height * aspectRatio;
+        } else {
+            canvas.width = width * 0.9;
+            canvas.height = canvas.width / aspectRatio;
+        }
+        
+        pandaTargetY = canvas.height * 0.85;
+        pandaY = pandaTargetY;
+        
+        // Initialize panda's position to the center lane
+        pandaCurrentLane = Math.floor(LANE_COUNT / 2);
+        const laneWidth = canvas.width / LANE_COUNT;
+        pandaX = pandaCurrentLane * laneWidth + laneWidth / 2;
+    }
+
+    // Play a relaxing sound effect on successful hit
+    function playSuccessSound() {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        const now = audioContext.currentTime;
+        
+        // Create a simple plucked string sound
+        const gainNode = audioContext.createGain();
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.5, now + 0.01);
+        gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
+        
+        const oscillator = audioContext.createOscillator();
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(440, now); // A4
+        oscillator.frequency.linearRampToValueAtTime(880, now + 0.2); // Simple glissando
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.start(now);
+        oscillator.stop(now + 0.3);
+    }
+    
+    // Draw the panda character
+    function drawPanda(timestamp) {
+        // Update panda vertical position
+        pandaY += (pandaTargetY - pandaY) * 0.1;
+        
+        // Calculate the target X position based on the current lane
+        const laneWidth = canvas.width / LANE_COUNT;
+        const pandaTargetX = pandaCurrentLane * laneWidth + laneWidth / 2;
+        
+        // Smoothly move the panda horizontally to the target lane
+        pandaX += (pandaTargetX - pandaX) * 0.2;
+        
+        const pandaSize = canvas.width * 0.15;
+        
+        // Add a gentle bobbing motion using a sine wave
+        const bobOffset = Math.sin(timestamp * 0.002) * 5;
+
+        // Get theme and character colors
+        const theme = THEMES[currentTheme];
+        const { body: bodyColor, fur: furColor } = theme.pandaColors; // 取得動態角色顏色
+
+        // Save canvas state before transformation
+        ctx.save();
+        
+        // Apply glowing effect if needed
+        if (isPandaGlowing) {
+            ctx.shadowColor = theme.lineColor; // 根據主題調整光暈顏色
+            ctx.shadowBlur = 20;
+        }
+        
+        // Translate to the panda's center for rotation
+        ctx.translate(pandaX, pandaY + bobOffset);
+        // Add a slight rotational wobble
+        const wobbleRotation = Math.sin(timestamp * 0.001) * 0.05;
+        ctx.rotate(wobbleRotation);
+
+        // Draw panda body (使用主題身體顏色 bodyColor)
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, pandaSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Panda ears and eyes (使用主題毛髮顏色 furColor)
+        ctx.fillStyle = furColor;
+        ctx.beginPath();
+        ctx.arc(-pandaSize * 0.3, -pandaSize * 0.4, pandaSize * 0.2, 0, Math.PI * 2); // Left ear
+        ctx.arc(pandaSize * 0.3, -pandaSize * 0.4, pandaSize * 0.2, 0, Math.PI * 2);  // Right ear
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.arc(-pandaSize * 0.15, -pandaSize * 0.1, pandaSize * 0.05, 0, Math.PI * 2); // Left eye
+        ctx.arc(pandaSize * 0.15, -pandaSize * 0.1, pandaSize * 0.05, 0, Math.PI * 2); // Right eye
+        ctx.fill();
+        
+        // Panda nose (使用主題毛髮顏色 furColor)
+        ctx.beginPath();
+        ctx.arc(0, pandaSize * 0.05, pandaSize * 0.05, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Restore the canvas to its original state
+        ctx.restore();
+    }
+    
+    // Draw the bamboo shoot note
+    function drawBambooShoot(x, y) {
+        const theme = THEMES[currentTheme];
+        ctx.fillStyle = theme.noteColor; // 使用主題指定的竹筍顏色
+        ctx.beginPath();
+        ctx.arc(x, y, NOTE_SIZE / 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add a highlight (fixed white for visibility)
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.arc(x - NOTE_SIZE * 0.1, y - NOTE_SIZE * 0.1, NOTE_SIZE * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Update game state
+    function update(deltaTime) {
+        if (!isPlaying) return;
+        
+        // Update note positions
+        notes.forEach(note => {
+            note.y += NOTE_SPEED * deltaTime / 16;
+        });
+        
+        // Remove notes that have passed the end of the canvas
+        notes = notes.filter(note => note.y < canvas.height + NOTE_SIZE);
+        
+        // Generate new notes based on song time
+        const currentTime = performance.now() - songStartTime;
+        while (noteIndex < songData.length && songData[noteIndex].time <= currentTime) {
+            const laneWidth = canvas.width / LANE_COUNT;
+            const x = songData[noteIndex].lane * laneWidth + laneWidth / 2;
+            notes.push({ x: x, y: 0, type: 'tap', lane: songData[noteIndex].lane });
+            noteIndex++;
+        }
+        
+        // Check for game end
+        if (currentTime > songDuration && notes.length === 0) {
+            endGame();
+        }
+    }
+    
+    // Draw the game screen
+    function draw(timestamp) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const theme = THEMES[currentTheme]; // 取得當前主題
+
+        // Draw background lines
+        const laneWidth = canvas.width / LANE_COUNT;
+        ctx.strokeStyle = theme.lineColor; // 使用動態線條顏色
+        ctx.lineWidth = 2;
+        for (let i = 1; i < LANE_COUNT; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * laneWidth, 0);
+            ctx.lineTo(i * laneWidth, canvas.height);
+            ctx.stroke();
+        }
+        
+        // Draw notes
+        notes.forEach(note => {
+            drawBambooShoot(note.x, note.y);
+        });
+        
+        // Draw panda
+        drawPanda(timestamp);
+        
+        // Draw score
+        ctx.fillStyle = theme.textColor; // 使用動態文字顏色
+        ctx.font = '24px Noto Sans TC';
+        ctx.textAlign = 'center';
+        ctx.fillText(`分數: ${score}`, canvas.width / 2, 40);
+    }
+    
+    // Main game loop
+    function gameLoop(timestamp) {
+        if (!isPlaying) return;
+        
+        const deltaTime = timestamp - lastTime;
+        lastTime = timestamp;
+        
+        update(deltaTime);
+        draw(timestamp);
+        
+        requestAnimationFrame(gameLoop);
+    }
+    
+    // Function to process a tap in a specific lane
+    function processInput(laneIndex) {
+        if (!isPlaying) return;
+        
+        // 限制每次移動只能一格 (0, 1, 2, 3)
+        if (Math.abs(laneIndex - pandaCurrentLane) <= 1 || true) { // 移除移動限制，讓鍵盤切換更自由
+             // Set the panda's current lane
+            pandaCurrentLane = laneIndex;
+            
+            // Check if a note was hit in the tapped lane
+            let foundNote = false;
+            notes.forEach((note, index) => {
+                // Check if the note is in the correct lane AND within the hit zone at the bottom
+                const isWithinHitZone = note.y > (canvas.height - HIT_ZONE_HEIGHT);
+
+                if (note.lane === laneIndex && isWithinHitZone) {
+                    score += 100;
+                    notes.splice(index, 1);
+                    foundNote = true;
+                    playSuccessSound();
+                }
+            });
+            
+            // Panda reaction on hit
+            if (foundNote) {
+                pandaTargetY = canvas.height * 0.82;
+                isPandaGlowing = true;
+                setTimeout(() => {
+                    pandaTargetY = canvas.height * 0.85;
+                    isPandaGlowing = false;
+                }, 100);
+            }
+        }
+    }
+
+    // Handle mouse/touch input
+    function handleMouseOrTouch(event) {
+        if (isListeningForKey !== null) return;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = event.clientX || event.touches[0].clientX;
+        const touchX = clientX - rect.left;
+        
+        // Determine the lane based on touch location
+        const tappedLane = Math.floor(touchX / (canvas.width / LANE_COUNT));
+        
+        processInput(tappedLane);
+    }
+
+    // Handle keyboard input (使用動態按鍵表)
+    function handleKeyboardInput(event) {
+        if (isListeningForKey !== null) return; // 避免在設定按鍵時觸發遊戲輸入
+        
+        let laneIndex = -1;
+        const pressedKey = event.key.toLowerCase();
+
+        // 檢查按下的鍵是否在 keyMap 中
+        for (const lane in keyMap) {
+            if (keyMap[lane] === pressedKey) {
+                laneIndex = parseInt(lane);
+                break;
+            }
+        }
+
+        if (laneIndex !== -1) {
+            processInput(laneIndex);
+        }
+    }
+    
+    // --- Gemini API 函數 (省略 TTS 輔助函數以保持簡潔，但它們在檔案中) ---
+    async function generateNewSong() {
+        const loadingMessage = '貓熊正在思考療癒旋律...';
+        regenerateButton.textContent = loadingMessage;
+        regenerateButton.disabled = true;
+
+        const systemPrompt = `你是一個音樂生成器，專為療癒系節奏遊戲設計。請根據以下 JSON 格式，為一個四個車道的遊戲生成一個長度約 15 秒的竹林主題節拍。
+            每個節拍應包含 'time'（相對於歌曲開始的毫秒數）和 'lane'（0 到 3 的整數）。
+            確保節拍是平靜、舒緩的，適合療癒主題。歌曲總長度應在 12000 到 15000 毫秒之間。
+            請以一個 JSON 陣列格式回應，不要包含任何其他文字或說明。`;
+        const userQuery = '請為《熊貓節拍：竹林冒險》生成一組療癒風格的節拍。';
+
+        try {
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+                generationConfig: {
+                    responseMimeType: 'application/json',
+                },
+            };
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text) {
+                const newSong = JSON.parse(text);
+                if (Array.isArray(newSong)) {
+                    songData = newSong;
+                    const maxTime = Math.max(...newSong.map(note => note.time));
+                    songDuration = maxTime + 1000;
+                }
+            }
+        } catch (error) {
+            console.error('Failed to generate new song:', error);
+            // Fallback to default song data
+        } finally {
+            regenerateButton.textContent = '讓貓熊給你一個療癒旋律 ✨';
+            regenerateButton.disabled = false;
+        }
+    }
+
+    async function generatePostGameWisdom(finalScore) {
+        postGameMessage.classList.remove('hidden');
+        postGameMessage.textContent = '貓熊正在思考...';
+        getWisdomButton.disabled = true;
+
+        const systemPrompt = `你是一隻可愛又溫柔的熊貓，專門提供鼓勵和療癒話語。請根據玩家的分數給予一句話的溫馨回應。分數越高，話語越正面。如果分數低，則提供安慰的話。`;
+        let userQuery;
+        if (finalScore >= 5000) {
+            userQuery = `玩家得分：${finalScore}。請給予一句超級棒的鼓勵話語，並在話語中提到這個高分。`;
+        } else if (finalScore >= 2000) {
+            userQuery = `玩家得分：${finalScore}。請給予一句正面的話，鼓勵玩家繼續努力。`;
+        } else {
+            userQuery = `玩家得分：${finalScore}。請給予一句溫柔的安慰話語，讓玩家不要氣餒。`;
+        }
+
+        try {
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text) {
+                postGameMessage.textContent = text;
+                speak(text);
+            }
+        } catch (error) {
+            console.error('Failed to generate wisdom:', error);
+            postGameMessage.textContent = '貓熊今天有點害羞，無法說話。';
+        } finally {
+            getWisdomButton.disabled = false;
+        }
+    }
+    
+    // TTS function to play a message (Helper functions are kept below)
+    async function speak(textToSpeak) {
+        try {
+            const payload = {
+                contents: [{
+                    parts: [{ text: textToSpeak }]
+                }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: "Zephyr" }
+                        }
+                    }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            const part = result?.candidates?.[0]?.content?.parts?.[0];
+            const audioData = part?.inlineData?.data;
+            const mimeType = part?.inlineData?.mimeType;
+
+            if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                const pcmData = base64ToArrayBuffer(audioData);
+                const pcm16 = new Int16Array(pcmData);
+                const wavBlob = pcmToWav(pcm16, sampleRate);
+                const audioUrl = URL.createObjectURL(wavBlob);
+                
+                const audio = new Audio(audioUrl);
+                audio.play();
+            }
+        } catch (error) {
+            console.error("TTS failed:", error);
+        }
+    }
+
+    function base64ToArrayBuffer(base64) {
+        const binaryString = atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+    function pcmToWav(pcmData, sampleRate) {
+        const pcm16 = new Int16Array(pcmData.buffer);
+        const pcm16ByteLength = pcm16.byteLength;
+        const wavBuffer = new ArrayBuffer(44 + pcm16ByteLength);
+        const view = new DataView(wavBuffer);
+        let offset = 0;
+
+        // RIFF chunk
+        writeString(view, offset, 'RIFF'); offset += 4;
+        view.setUint32(offset, 36 + pcm16ByteLength, true); offset += 4;
+        writeString(view, offset, 'WAVE'); offset += 4;
+
+        // fmt chunk
+        writeString(view, offset, 'fmt '); offset += 4;
+        view.setUint32(offset, 16, true); offset += 4;
+        view.setUint16(offset, 1, true); offset += 2; // PCM format
+        view.setUint16(offset, 1, true); offset += 2; // Mono
+        view.setUint32(offset, sampleRate, true); offset += 4;
+        view.setUint32(offset, sampleRate * 2, true); offset += 4; // Byte rate
+        view.setUint16(offset, 2, true); offset += 2; // Block align
+        view.setUint16(offset, 16, true); offset += 2; // Bits per sample
+
+        // data chunk
+        writeString(view, offset, 'data'); offset += 4;
+        view.setUint32(offset, pcm16ByteLength, true); offset += 4;
+        
+        for (let i = 0; i < pcm16.length; i++, offset += 2) {
+            view.setInt16(offset, pcm16[i], true);
+        }
+        
+        return new Blob([view], { type: 'audio/wav' });
+    }
+
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+    
+    // Start the game with a countdown
+    async function startGame() {
+        notes = [];
+        score = 0;
+        noteIndex = 0;
+        isPlaying = false;
+        
+        startScreen.classList.add('hidden');
+        uiOverlay.classList.remove('hidden');
+        endScreen.classList.add('hidden');
+        countdownDisplay.classList.remove('hidden');
+        countdownDisplay.style.flexDirection = 'column';
+        postGameMessage.classList.add('hidden');
+
+        speak("放輕鬆，慢慢來，竹林裡的每一刻都值得享受。");
+
+        let countdown = 3;
+        countdownNumber.textContent = countdown;
+
+        const countdownInterval = setInterval(() => {
+            countdown--;
+            if (countdown > 0) {
+                countdownNumber.textContent = countdown;
+            } else if (countdown === 0) {
+                countdownNumber.textContent = 'Go!';
+                pandaWisdom.textContent = '';
+            } else {
+                clearInterval(countdownInterval);
+                countdownDisplay.classList.add('hidden');
+                uiOverlay.classList.add('hidden');
+                
+                isPlaying = true;
+                songStartTime = performance.now();
+                lastTime = performance.now();
+                requestAnimationFrame(gameLoop);
+            }
+        }, 1000);
+    }
+    
+    // End the game
+    function endGame() {
+        isPlaying = false;
+        uiOverlay.classList.remove('hidden');
+        startScreen.classList.add('hidden'); // 確保開始畫面被隱藏
+        endScreen.classList.remove('hidden');
+        finalScoreDisplay.textContent = score;
+        restartButton.textContent = "返回設定主介面"; // 更新按鈕文字
+    }
+
+    // 新增：重置回主設定畫面
+    function resetToStartScreen() {
+        // 重設遊戲狀態，但保留分數和歌曲
+        notes = [];
+        noteIndex = 0;
+        
+        // 隱藏結束畫面，顯示開始畫面
+        endScreen.classList.add('hidden');
+        startScreen.classList.remove('hidden');
+        uiOverlay.classList.remove('hidden'); // 確保整個疊層可見
+
+        // 確保按鈕文字變回「重新開始」的預設值，避免重複顯示「返回設定主介面」
+        restartButton.textContent = "重新開始"; 
+    }
+
+    // --- 初始化 ---
+    function initSetup() {
+        resizeCanvas();
+        
+        // 1. 設定主題選擇器
+        for (const key in THEMES) {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = THEMES[key].name;
+            themeSelector.appendChild(option);
+        }
+        themeSelector.addEventListener('change', (e) => applyTheme(e.target.value));
+
+        // 2. 設定按鍵自訂 UI
+        setupKeyAssignmentUI();
+        
+        // 3. 應用初始主題
+        applyTheme(currentTheme);
+    }
+    
+    // Event listeners
+    startButton.addEventListener('click', startGame);
+    // *** 關鍵更改: 點擊重新開始時，返回設定畫面 ***
+    restartButton.addEventListener('click', resetToStartScreen); 
+    regenerateButton.addEventListener('click', generateNewSong);
+    getWisdomButton.addEventListener('click', () => generatePostGameWisdom(score));
+    canvas.addEventListener('mousedown', handleMouseOrTouch);
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault(); // Prevent mobile browser scrolling
+        handleMouseOrTouch(e);
+    });
+    window.addEventListener('keydown', handleKeyboardInput); // Add keyboard listener
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Run Initialization
+    initSetup();
+    
+</script>
+
+</body>
+</html>
